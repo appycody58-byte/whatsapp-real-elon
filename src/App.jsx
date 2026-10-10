@@ -1,10 +1,16 @@
 import { useState, useEffect, useRef } from "react";
-import { createClient } from "@supabase/supabase-js";
-
-const supabase = createClient(
-  "https://fhcafwrbkejxapqepcan.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZoY2Fmd3JiZ2VqeGFwcWVwY2FuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI4NjIzNzMsImV4cCI6MjA3ODQzODM3M30.Z2Vye0mchxW2f1ulicn9s2lRw6fAU1crn9sQ"
-);
+import {
+  collection,
+  addDoc,
+  query,
+  orderBy,
+  onSnapshot,
+  where,
+  or,
+  and,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db } from "./firebase";
 
 const ELON = {
   id: "elon-musk",
@@ -19,33 +25,44 @@ export default function App() {
   const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState("");
   const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("Connecting to Firebase...");
   const ref = useRef(null);
 
+  // LIVE contacts listener
   useEffect(() => {
-    supabase
-      .from("contacts")
-      .select("*")
-      .order("created_at")
-      .then(({ data }) => {
-        if (data) {
-          setContacts(data);
-          if (data.length > 0) setSel(data[0]);
-        }
-      });
+    const q = query(collection(db, "contacts"), orderBy("createdAt", "asc"));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setContacts(list);
+        if (list.length > 0 && !sel) setSel(list[0]);
+        setStatus("LIVE · Firebase");
+      },
+      (err) => {
+        console.error(err);
+        setStatus("Firebase error – check your config in src/firebase.js");
+      }
+    );
+    return () => unsub();
   }, []);
 
+  // LIVE messages for selected contact
   useEffect(() => {
     if (!sel) return;
-    supabase
-      .from("messages")
-      .select("*")
-      .or(
-        `and(from_id.eq.elon-musk,to_id.eq.${sel.id}),and(from_id.eq.${sel.id},to_id.eq.elon-musk)`
-      )
-      .order("created_at")
-      .then(({ data }) => {
-        if (data) setMsgs(data);
-      });
+
+    // Simple approach: get all messages and filter client-side for reliability
+    const q = query(collection(db, "messages"), orderBy("createdAt", "asc"));
+    const unsub = onSnapshot(q, (snap) => {
+      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      const filtered = all.filter(
+        (m) =>
+          (m.from_id === "elon-musk" && m.to_id === sel.id) ||
+          (m.from_id === sel.id && m.to_id === "elon-musk")
+      );
+      setMsgs(filtered);
+    });
+    return () => unsub();
   }, [sel]);
 
   useEffect(() => {
@@ -55,14 +72,14 @@ export default function App() {
   const send = async () => {
     if (!text.trim() || !sel) return;
     const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    await supabase.from("messages").insert({
+    await addDoc(collection(db, "messages"), {
       from_id: "elon-musk",
       to_id: sel.id,
-      text,
+      text: text.trim(),
       time,
+      createdAt: serverTimestamp(),
     });
     setText("");
-    setMsgs((m) => [...m, { from_id: "elon-musk", to_id: sel.id, text, time }]);
   };
 
   const importReal = async () => {
@@ -73,14 +90,14 @@ export default function App() {
       }
       const picked = await navigator.contacts.select(["name", "tel"], { multiple: true });
       for (let c of picked) {
-        await supabase.from("contacts").insert({
+        await addDoc(collection(db, "contacts"), {
           name: c.name?.[0] || "Unknown",
           phone: c.tel?.[0] || "",
           avatar: `https://i.pravatar.cc/150?u=${c.tel?.[0] || Math.random()}`,
+          createdAt: serverTimestamp(),
         });
       }
-      alert(picked.length + " REAL contacts saved to Supabase!");
-      location.reload();
+      alert(picked.length + " REAL contacts saved LIVE to Firebase!");
     } catch (err) {
       console.error(err);
       document.getElementById("vcf").click();
@@ -94,18 +111,18 @@ export default function App() {
     const names = [...txt.matchAll(/FN:(.+)/g)].map((x) => x[1].trim());
     const tels = [...txt.matchAll(/TEL.*:(.+)/g)].map((x) => x[1].trim());
     for (let i = 0; i < names.length; i++) {
-      await supabase.from("contacts").insert({
+      await addDoc(collection(db, "contacts"), {
         name: names[i],
         phone: tels[i] || "+000",
         avatar: `https://i.pravatar.cc/150?u=${tels[i] || names[i]}`,
+        createdAt: serverTimestamp(),
       });
     }
-    alert(names.length + " REAL contacts imported from VCF!");
-    location.reload();
+    alert(names.length + " REAL contacts imported LIVE to Firebase!");
   };
 
   const filtered = contacts.filter((c) =>
-    c.name?.toLowerCase().includes(search.toLowerCase())
+    (c.name || "").toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -116,7 +133,7 @@ export default function App() {
           <img src={ELON.avatar} className="w-10 h-10 rounded-full object-cover" alt="Elon" />
           <div>
             <b>{ELON.name} 🇺🇸</b>
-            <div className="text-xs text-[#8696a0]">{ELON.phone} · REAL</div>
+            <div className="text-xs text-[#8696a0]">{ELON.phone} · {status}</div>
           </div>
         </div>
 
@@ -153,7 +170,7 @@ export default function App() {
                   <span className="font-medium">{c.name}</span>
                   <span className="text-xs text-[#8696a0]">{c.phone}</span>
                 </div>
-                <div className="text-xs text-[#8696a0]">REAL DB Chat</div>
+                <div className="text-xs text-[#8696a0]">LIVE Firebase Chat</div>
               </div>
             </div>
           ))}
@@ -173,7 +190,7 @@ export default function App() {
               <img src={sel.avatar} className="w-10 h-10 rounded-full object-cover" alt={sel.name} />
               <div>
                 <b>{sel.name}</b>
-                <div className="text-xs text-[#8696a0]">Online · REAL Supabase</div>
+                <div className="text-xs text-[#8696a0]">Online · LIVE Firebase</div>
               </div>
             </div>
 
@@ -184,10 +201,12 @@ export default function App() {
                 backgroundImage: `url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23182126' fill-opacity='0.4'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")`,
               }}
             >
-              {msgs.map((m, i) => (
+              {msgs.map((m) => (
                 <div
-                  key={i}
-                  className={`max-w-[65%] p-2.5 rounded-lg text-sm ${m.from_id === "elon-musk" ? "bg-[#005c4b] ml-auto" : "bg-[#202c33]"}`}
+                  key={m.id}
+                  className={`max-w-[65%] p-2.5 rounded-lg text-sm ${
+                    m.from_id === "elon-musk" ? "bg-[#005c4b] ml-auto" : "bg-[#202c33]"
+                  }`}
                 >
                   {m.text}
                   <div className="text-[10px] opacity-60 text-right mt-1">{m.time}</div>
