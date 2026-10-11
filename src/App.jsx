@@ -1,21 +1,24 @@
 import { useState, useEffect, useRef } from "react";
-import {
-  collection,
-  addDoc,
-  query,
-  orderBy,
-  onSnapshot,
-  serverTimestamp,
-  updateDoc,
-  doc,
-} from "firebase/firestore";
-import { db } from "./firebase";
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy } from "firebase/firestore";
 
-const ME = {
-  id: "elon-musk",
+const firebaseConfig = {
+  apiKey: "AIzaSyATFQE9vknKALk6YZbwOBXY435hhuQVuSI",
+  authDomain: "whatsapp-clone-a0ae2.firebaseapp.com",
+  projectId: "whatsapp-clone-a0ae2",
+  storageBucket: "whatsapp-clone-a0ae2.firebasestorage.app",
+  messagingSenderId: "682843818360",
+  appId: "1:682843818360:web:4f0e3c5ee32ce2e498e08d"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+const ELON = {
+  id: "elon",
   name: "Elon Musk",
   phone: "+1 (310) 420-5968",
-  avatar: "https://upload.wikimedia.org/wikipedia/commons/3/34/Elon_Musk_2015.jpg",
+  avatar: "https://upload.wikimedia.org/wikipedia/commons/3/34/Elon_Musk_2015.jpg"
 };
 
 export default function App() {
@@ -24,311 +27,196 @@ export default function App() {
   const [msgs, setMsgs] = useState([]);
   const [text, setText] = useState("");
   const [search, setSearch] = useState("");
-  const [typing, setTyping] = useState(false);
-  const [status, setStatus] = useState("Connecting...");
-  const ref = useRef(null);
-  const typingTimeout = useRef(null);
+  const listRef = useRef(null);
 
-  // LIVE contacts
   useEffect(() => {
     const q = query(collection(db, "contacts"), orderBy("createdAt", "asc"));
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-        setContacts(list);
-        if (list.length > 0 && !sel) setSel(list[0]);
-        setStatus("LIVE · Firebase");
-      },
-      (err) => {
-        console.error(err);
-        setStatus("Check Firebase rules");
-      }
-    );
-    return () => unsub();
+    return onSnapshot(q, (snap) => {
+      const d = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setContacts(d);
+      if (d.length > 0 && !sel) setSel(d[0]);
+    });
   }, []);
 
-  // LIVE messages
   useEffect(() => {
     if (!sel) return;
-
     const q = query(collection(db, "messages"), orderBy("createdAt", "asc"));
-    const unsub = onSnapshot(q, (snap) => {
-      const all = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      const filtered = all.filter(
-        (m) =>
-          (m.from_id === ME.id && m.to_id === sel.id) ||
-          (m.from_id === sel.id && m.to_id === ME.id)
-      );
-      setMsgs(filtered);
-
-      // Mark as read
-      filtered.forEach(async (m) => {
-        if (m.from_id === sel.id && !m.read) {
-          try {
-            await updateDoc(doc(db, "messages", m.id), { read: true });
-          } catch (e) {}
-        }
-      });
+    return onSnapshot(q, (snap) => {
+      const all = snap.docs.map(d => d.data());
+      setMsgs(all.filter(m => (m.from === "elon" && m.to === sel.id) || (m.from === sel.id && m.to === "elon")));
     });
-    return () => unsub();
   }, [sel]);
 
-  useEffect(() => {
-    ref.current?.scrollTo({ top: 999999, behavior: "smooth" });
-  }, [msgs, typing]);
+  useEffect(() => { listRef.current?.scrollTo(0, 99999); }, [msgs]);
 
   const send = async () => {
     if (!text.trim() || !sel) return;
-    const msgText = text.trim();
-    setText("");
-    setTyping(false);
-
     await addDoc(collection(db, "messages"), {
-      from_id: ME.id,
-      to_id: sel.id,
-      text: msgText,
-      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-      createdAt: serverTimestamp(),
-      read: false,
+      from: "elon",
+      to: sel.id,
+      text: text,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      createdAt: Date.now()
     });
-  };
-
-  const handleTyping = (e) => {
-    setText(e.target.value);
-    setTyping(true);
-    clearTimeout(typingTimeout.current);
-    typingTimeout.current = setTimeout(() => setTyping(false), 1500);
+    setText("");
   };
 
   const importReal = async () => {
     try {
-      if (!navigator.contacts) {
-        document.getElementById("vcf").click();
-        return;
-      }
       const picked = await navigator.contacts.select(["name", "tel"], { multiple: true });
       for (let c of picked) {
         await addDoc(collection(db, "contacts"), {
-          name: c.name?.[0] || "Unknown",
-          phone: c.tel?.[0] || "",
-          avatar: `https://i.pravatar.cc/150?u=${c.tel?.[0] || Math.random()}`,
-          createdAt: serverTimestamp(),
-          lastSeen: "online",
+          name: c.name[0],
+          phone: c.tel[0],
+          avatar: `https://i.pravatar.cc/150?u=${c.tel[0]}`,
+          createdAt: Date.now()
         });
       }
-      alert(`${picked.length} REAL contacts saved`);
+      alert(picked.length + " REAL contacts saved!");
     } catch {
       document.getElementById("vcf").click();
     }
   };
 
   const onVcf = async (e) => {
-    const file = e.target.files?.[0];
+    const file = e.target.files[0];
     if (!file) return;
     const txt = await file.text();
-    const names = [...txt.matchAll(/FN:(.+)/g)].map((x) => x[1].trim());
-    const tels = [...txt.matchAll(/TEL.*:(.+)/g)].map((x) => x[1].trim());
+    const names = [...txt.matchAll(/FN:(.+)/g)].map(m => m[1].trim());
+    const tels = [...txt.matchAll(/TEL.*:(.+)/g)].map(m => m[1].trim());
     for (let i = 0; i < names.length; i++) {
       await addDoc(collection(db, "contacts"), {
         name: names[i],
-        phone: tels[i] || "+000",
-        avatar: `https://i.pravatar.cc/150?u=${tels[i] || names[i]}`,
-        createdAt: serverTimestamp(),
-        lastSeen: "online",
+        phone: tels[i] || "+234",
+        avatar: `https://i.pravatar.cc/150?u=${tels[i]}`,
+        createdAt: Date.now()
       });
     }
-    alert(`${names.length} REAL contacts imported`);
+    alert(names.length + " imported!");
   };
 
-  const filtered = contacts.filter((c) =>
-    (c.name || "").toLowerCase().includes(search.toLowerCase())
-  );
-
-  const getLastMessage = (contactId) => {
-    // This is a simple version - in real app we would store last message on contact
-    return "";
-  };
+  const filtered = contacts.filter(c => c.name?.toLowerCase().includes(search.toLowerCase()));
 
   return (
-    <div className="flex h-screen bg-[#0b141a] text-white overflow-hidden">
-      {/* LEFT SIDEBAR */}
-      <div className="w-full md:w-[420px] flex flex-col border-r border-[#222d34] bg-[#111b21]">
-        {/* Header */}
-        <div className="h-[60px] bg-[#202c33] flex items-center justify-between px-4 shrink-0">
-          <div className="flex items-center gap-3">
-            <img src={ME.avatar} className="w-10 h-10 rounded-full object-cover" alt="me" />
-            <div>
-              <div className="font-medium text-[15px]">{ME.name}</div>
-              <div className="text-[11px] text-[#00a884]">{status}</div>
-            </div>
-          </div>
-          <div className="flex gap-4 text-[#aebac1] text-xl">
-            <span className="cursor-pointer hover:text-white">✦</span>
-            <span className="cursor-pointer hover:text-white">⋮</span>
+    <div style={{ display: "flex", height: "100vh", background: "#111b21", color: "white", fontFamily: "Segoe UI, sans-serif" }}>
+      <div style={{ width: "100%", maxWidth: 400, borderRight: "1px solid #222d34", display: "flex", flexDirection: "column" }}>
+        <div style={{ height: 59, background: "#202c33", display: "flex", alignItems: "center", gap: 10, padding: "0 16px" }}>
+          <img src={ELON.avatar} style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover" }} alt="Elon" />
+          <div>
+            <div style={{ fontWeight: "bold" }}>{ELON.name} 🇺🇸</div>
+            <div style={{ fontSize: 11, color: "#8696a0" }}>{ELON.phone}</div>
           </div>
         </div>
 
-        {/* Search + Import */}
-        <div className="p-3 bg-[#111b21] space-y-2">
-          <div className="relative">
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search or start new chat"
-              className="w-full bg-[#202c33] rounded-lg pl-10 pr-3 py-2.5 text-sm outline-none placeholder:text-[#8696a0]"
-            />
-            <span className="absolute left-3.5 top-2.5 text-[#8696a0]">🔍</span>
-          </div>
-
+        <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search or start new chat"
+            style={{ width: "100%", background: "#202c33", padding: 10, borderRadius: 8, border: "none", outline: "none", color: "white" }}
+          />
           <button
             onClick={importReal}
-            className="w-full bg-[#00a884] hover:bg-[#008f72] py-2.5 rounded-lg text-sm font-semibold transition"
+            style={{ width: "100%", background: "#00a884", padding: 10, borderRadius: 8, fontWeight: "bold", border: "none", color: "white", cursor: "pointer" }}
           >
-            + Import Real Phone Contacts
+            + Import REAL Phone Contacts
           </button>
           <input id="vcf" type="file" hidden accept=".vcf" onChange={onVcf} />
         </div>
 
-        {/* Contact list */}
-        <div className="flex-1 overflow-y-auto">
-          {filtered.length === 0 ? (
-            <div className="p-10 text-center text-[#8696a0] text-sm leading-relaxed">
-              No contacts yet.<br /><br />
-              Click the green button above to import<br />your real phone contacts.
-            </div>
-          ) : (
-            filtered.map((c) => (
-              <div
-                key={c.id}
-                onClick={() => setSel(c)}
-                className={`flex gap-3 px-3 py-3 cursor-pointer transition ${
-                  sel?.id === c.id ? "bg-[#2a3942]" : "hover:bg-[#202c33]"
-                }`}
-              >
-                <img
-                  src={c.avatar}
-                  className="w-[49px] h-[49px] rounded-full object-cover shrink-0"
-                  alt={c.name}
-                />
-                <div className="flex-1 min-w-0 border-b border-[#222d34] pb-3">
-                  <div className="flex justify-between items-baseline">
-                    <span className="font-medium text-[16px] truncate">{c.name}</span>
-                    <span className="text-[11px] text-[#00a884] shrink-0">online</span>
-                  </div>
-                  <div className="text-[13px] text-[#8696a0] truncate mt-0.5">
-                    {c.phone || "Tap to chat"}
-                  </div>
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {filtered.map(c => (
+            <div
+              key={c.id}
+              onClick={() => setSel(c)}
+              style={{
+                display: "flex",
+                gap: 12,
+                padding: 12,
+                cursor: "pointer",
+                background: sel?.id === c.id ? "#2a3942" : "transparent"
+              }}
+            >
+              <img src={c.avatar} style={{ width: 49, height: 49, borderRadius: "50%", objectFit: "cover" }} alt={c.name} />
+              <div style={{ flex: 1, borderBottom: "1px solid #222d34" }}>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>{c.name}</span>
+                  <span style={{ fontSize: 11, color: "#8696a0" }}>{c.phone}</span>
                 </div>
+                <div style={{ fontSize: 13, color: "#8696a0" }}>REAL chat</div>
               </div>
-            ))
-          )}
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* RIGHT CHAT AREA */}
-      <div className="flex-1 hidden md:flex flex-col bg-[#0b141a]">
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#0b141a" }}>
         {sel ? (
           <>
-            {/* Chat header */}
-            <div className="h-[60px] bg-[#202c33] flex items-center gap-3 px-4 shrink-0">
-              <img
-                src={sel.avatar}
-                className="w-10 h-10 rounded-full object-cover"
-                alt={sel.name}
-              />
-              <div className="flex-1">
-                <div className="font-medium text-[16px]">{sel.name}</div>
-                <div className="text-[12px] text-[#8696a0]">
-                  {typing ? (
-                    <span className="text-[#00a884]">typing...</span>
-                  ) : (
-                    "online"
-                  )}
-                </div>
-              </div>
-              <div className="flex gap-5 text-[#aebac1] text-lg">
-                <span>🔍</span>
-                <span>⋮</span>
-              </div>
+            <div style={{ height: 59, background: "#202c33", padding: "0 16px", display: "flex", alignItems: "center", gap: 10 }}>
+              <img src={sel.avatar} style={{ width: 40, height: 40, borderRadius: "50%", objectFit: "cover" }} alt={sel.name} />
+              <b>{sel.name}</b>
             </div>
 
-            {/* Messages */}
-            <div
-              ref={ref}
-              className="flex-1 overflow-y-auto px-10 py-4 space-y-1"
-              style={{
-                backgroundColor: "#0b141a",
-                backgroundImage: `url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23182126' fill-opacity='0.35'%3E%3Cpath d='M0 0h40v40H0V0zm40 40h40v40H40V40z'/%3E%3C/g%3E%3C/svg%3E")`,
-              }}
-            >
-              {msgs.map((m) => {
-                const isMe = m.from_id === ME.id;
-                return (
-                  <div
-                    key={m.id}
-                    className={`flex ${isMe ? "justify-end" : "justify-start"}`}
-                  >
-                    <div
-                      className={`relative max-w-[65%] px-3 py-1.5 rounded-lg text-[14.5px] leading-relaxed shadow-sm ${
-                        isMe
-                          ? "bg-[#005c4b] rounded-tr-none"
-                          : "bg-[#202c33] rounded-tl-none"
-                      }`}
-                    >
-                      {m.text}
-                      <div className="flex items-center justify-end gap-1 mt-0.5">
-                        <span className="text-[10px] text-white/60">{m.time}</span>
-                        {isMe && (
-                          <span className="text-[11px]">
-                            {m.read ? (
-                              <span className="text-[#53bdeb]">✓✓</span>
-                            ) : (
-                              <span className="text-white/40">✓✓</span>
-                            )}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {typing && (
-                <div className="flex justify-start">
-                  <div className="bg-[#202c33] px-4 py-2 rounded-lg rounded-tl-none text-sm text-[#8696a0]">
-                    typing...
+            <div ref={listRef} style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+              {msgs.map((m, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    justifyContent: m.from === "elon" ? "flex-end" : "flex-start",
+                    marginBottom: 4
+                  }}
+                >
+                  <div style={{
+                    background: m.from === "elon" ? "#005c4b" : "#202c33",
+                    padding: "6px 10px",
+                    borderRadius: 8,
+                    maxWidth: "70%",
+                    fontSize: 14
+                  }}>
+                    {m.text}
+                    <span style={{ fontSize: 10, opacity: 0.6, marginLeft: 6 }}>{m.time}</span>
                   </div>
                 </div>
-              )}
+              ))}
             </div>
 
-            {/* Input */}
-            <div className="h-[62px] bg-[#202c33] flex items-center gap-3 px-4 shrink-0">
-              <span className="text-[#8696a0] text-xl cursor-pointer">🙂</span>
-              <span className="text-[#8696a0] text-xl cursor-pointer">📎</span>
+            <div style={{ height: 62, background: "#202c33", display: "flex", gap: 8, padding: 12, alignItems: "center" }}>
               <input
                 value={text}
-                onChange={handleTyping}
-                onKeyDown={(e) => e.key === "Enter" && send()}
+                onChange={e => setText(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && send()}
                 placeholder="Type a message"
-                className="flex-1 bg-[#2a3942] rounded-lg px-4 py-2.5 text-[15px] outline-none placeholder:text-[#8696a0]"
+                style={{
+                  flex: 1,
+                  background: "#2a3942",
+                  padding: 10,
+                  borderRadius: 8,
+                  border: "none",
+                  outline: "none",
+                  color: "white"
+                }}
               />
               <button
                 onClick={send}
-                className="bg-[#00a884] hover:bg-[#008f72] w-10 h-10 rounded-full flex items-center justify-center transition"
+                style={{
+                  background: "#00a884",
+                  padding: "8px 20px",
+                  borderRadius: 8,
+                  border: "none",
+                  color: "white",
+                  fontWeight: "bold",
+                  cursor: "pointer"
+                }}
               >
-                <span className="text-white text-lg">➤</span>
+                Send
               </button>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-[#8696a0] bg-[#222e35]">
-            <div className="text-6xl mb-4 opacity-30">💬</div>
-            <div className="text-2xl font-light mb-2">WhatsApp</div>
-            <div className="text-sm text-center max-w-xs">
-              Import your real contacts to start chatting live on your own Firebase.
-            </div>
+          <div style={{ flex: 1, display: "grid", placeItems: "center", color: "#8696a0" }}>
+            Select a contact
           </div>
         )}
       </div>
