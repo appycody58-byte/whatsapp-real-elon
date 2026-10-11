@@ -8,7 +8,6 @@ import {
   serverTimestamp,
   updateDoc,
   doc,
-  setDoc,
 } from "firebase/firestore";
 import { db } from "./firebase";
 
@@ -43,13 +42,13 @@ export default function App() {
       },
       (err) => {
         console.error(err);
-        setStatus("Check Firebase rules / config");
+        setStatus("Check Firebase rules");
       }
     );
     return () => unsub();
   }, []);
 
-  // LIVE messages for selected chat
+  // LIVE messages
   useEffect(() => {
     if (!sel) return;
 
@@ -63,7 +62,7 @@ export default function App() {
       );
       setMsgs(filtered);
 
-      // Mark messages as read when opening chat
+      // Mark as read
       filtered.forEach(async (m) => {
         if (m.from_id === sel.id && !m.read) {
           try {
@@ -118,7 +117,7 @@ export default function App() {
           lastSeen: "online",
         });
       }
-      alert(`${picked.length} REAL contacts saved LIVE`);
+      alert(`${picked.length} REAL contacts saved`);
     } catch {
       document.getElementById("vcf").click();
     }
@@ -139,42 +138,21 @@ export default function App() {
         lastSeen: "online",
       });
     }
-    alert(`${names.length} REAL contacts imported LIVE`);
-  };
-
-  // Seed a few demo contacts if empty (optional helper)
-  const seedDemo = async () => {
-    const demos = [
-      { name: "Mark Zuckerberg", phone: "+1 650 543 4800", avatar: "https://i.pravatar.cc/150?u=zuck" },
-      { name: "Sundar Pichai", phone: "+1 650 253 0000", avatar: "https://i.pravatar.cc/150?u=sundar" },
-      { name: "Tim Cook", phone: "+1 408 996 1010", avatar: "https://i.pravatar.cc/150?u=tim" },
-    ];
-    for (const d of demos) {
-      await addDoc(collection(db, "contacts"), {
-        ...d,
-        createdAt: serverTimestamp(),
-        lastSeen: "online",
-      });
-    }
-    alert("3 demo contacts added");
+    alert(`${names.length} REAL contacts imported`);
   };
 
   const filtered = contacts.filter((c) =>
     (c.name || "").toLowerCase().includes(search.toLowerCase())
   );
 
-  const lastMsg = (contactId) => {
-    const chat = msgs.filter(
-      (m) =>
-        (m.from_id === ME.id && m.to_id === contactId) ||
-        (m.from_id === contactId && m.to_id === ME.id)
-    );
-    return chat[chat.length - 1]?.text || "Tap to chat";
+  const getLastMessage = (contactId) => {
+    // This is a simple version - in real app we would store last message on contact
+    return "";
   };
 
   return (
     <div className="flex h-screen bg-[#0b141a] text-white overflow-hidden">
-      {/* ========== LEFT SIDEBAR ========== */}
+      {/* LEFT SIDEBAR */}
       <div className="w-full md:w-[420px] flex flex-col border-r border-[#222d34] bg-[#111b21]">
         {/* Header */}
         <div className="h-[60px] bg-[#202c33] flex items-center justify-between px-4 shrink-0">
@@ -185,46 +163,39 @@ export default function App() {
               <div className="text-[11px] text-[#00a884]">{status}</div>
             </div>
           </div>
-          <div className="flex gap-4 text-[#aebac1]">
-            <button title="New chat" className="hover:text-white">✦</button>
-            <button title="Menu" className="hover:text-white">⋮</button>
+          <div className="flex gap-4 text-[#aebac1] text-xl">
+            <span className="cursor-pointer hover:text-white">✦</span>
+            <span className="cursor-pointer hover:text-white">⋮</span>
           </div>
         </div>
 
         {/* Search + Import */}
-        <div className="p-2 bg-[#111b21] space-y-2">
+        <div className="p-3 bg-[#111b21] space-y-2">
           <div className="relative">
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search or start new chat"
-              className="w-full bg-[#202c33] rounded-lg pl-10 pr-3 py-2 text-sm outline-none placeholder:text-[#8696a0]"
+              className="w-full bg-[#202c33] rounded-lg pl-10 pr-3 py-2.5 text-sm outline-none placeholder:text-[#8696a0]"
             />
-            <span className="absolute left-3 top-2.5 text-[#8696a0]">🔍</span>
+            <span className="absolute left-3.5 top-2.5 text-[#8696a0]">🔍</span>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={importReal}
-              className="flex-1 bg-[#00a884] hover:bg-[#008f72] py-2 rounded-lg text-sm font-semibold transition"
-            >
-              + Import Real Contacts
-            </button>
-            <button
-              onClick={seedDemo}
-              className="px-3 bg-[#2a3942] hover:bg-[#3b4a54] rounded-lg text-sm transition"
-              title="Add demo contacts"
-            >
-              Demo
-            </button>
-          </div>
+
+          <button
+            onClick={importReal}
+            className="w-full bg-[#00a884] hover:bg-[#008f72] py-2.5 rounded-lg text-sm font-semibold transition"
+          >
+            + Import Real Phone Contacts
+          </button>
           <input id="vcf" type="file" hidden accept=".vcf" onChange={onVcf} />
         </div>
 
         {/* Contact list */}
         <div className="flex-1 overflow-y-auto">
           {filtered.length === 0 ? (
-            <div className="p-8 text-center text-[#8696a0] text-sm">
-              No contacts yet.<br />Import real ones or add Demo.
+            <div className="p-10 text-center text-[#8696a0] text-sm leading-relaxed">
+              No contacts yet.<br /><br />
+              Click the green button above to import<br />your real phone contacts.
             </div>
           ) : (
             filtered.map((c) => (
@@ -243,16 +214,10 @@ export default function App() {
                 <div className="flex-1 min-w-0 border-b border-[#222d34] pb-3">
                   <div className="flex justify-between items-baseline">
                     <span className="font-medium text-[16px] truncate">{c.name}</span>
-                    <span className="text-[11px] text-[#8696a0] shrink-0 ml-2">
-                      {c.lastSeen === "online" ? (
-                        <span className="text-[#00a884]">online</span>
-                      ) : (
-                        ""
-                      )}
-                    </span>
+                    <span className="text-[11px] text-[#00a884] shrink-0">online</span>
                   </div>
                   <div className="text-[13px] text-[#8696a0] truncate mt-0.5">
-                    {lastMsg(c.id)}
+                    {c.phone || "Tap to chat"}
                   </div>
                 </div>
               </div>
@@ -261,12 +226,12 @@ export default function App() {
         </div>
       </div>
 
-      {/* ========== RIGHT CHAT AREA ========== */}
+      {/* RIGHT CHAT AREA */}
       <div className="flex-1 hidden md:flex flex-col bg-[#0b141a]">
         {sel ? (
           <>
             {/* Chat header */}
-            <div className="h-[60px] bg-[#202c33] flex items-center gap-3 px-4 shrink-0 border-b border-[#222d34]">
+            <div className="h-[60px] bg-[#202c33] flex items-center gap-3 px-4 shrink-0">
               <img
                 src={sel.avatar}
                 className="w-10 h-10 rounded-full object-cover"
@@ -278,20 +243,20 @@ export default function App() {
                   {typing ? (
                     <span className="text-[#00a884]">typing...</span>
                   ) : (
-                    <span>online · LIVE</span>
+                    "online"
                   )}
                 </div>
               </div>
               <div className="flex gap-5 text-[#aebac1] text-lg">
-                <span title="Search">🔍</span>
-                <span title="More">⋮</span>
+                <span>🔍</span>
+                <span>⋮</span>
               </div>
             </div>
 
             {/* Messages */}
             <div
               ref={ref}
-              className="flex-1 overflow-y-auto px-16 py-4 space-y-1"
+              className="flex-1 overflow-y-auto px-10 py-4 space-y-1"
               style={{
                 backgroundColor: "#0b141a",
                 backgroundImage: `url("data:image/svg+xml,%3Csvg width='80' height='80' viewBox='0 0 80 80' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23182126' fill-opacity='0.35'%3E%3Cpath d='M0 0h40v40H0V0zm40 40h40v40H40V40z'/%3E%3C/g%3E%3C/svg%3E")`,
@@ -305,7 +270,7 @@ export default function App() {
                     className={`flex ${isMe ? "justify-end" : "justify-start"}`}
                   >
                     <div
-                      className={`relative max-w-[65%] px-3 py-1.5 rounded-lg text-[14.5px] leading-relaxed shadow ${
+                      className={`relative max-w-[65%] px-3 py-1.5 rounded-lg text-[14.5px] leading-relaxed shadow-sm ${
                         isMe
                           ? "bg-[#005c4b] rounded-tr-none"
                           : "bg-[#202c33] rounded-tl-none"
@@ -315,11 +280,11 @@ export default function App() {
                       <div className="flex items-center justify-end gap-1 mt-0.5">
                         <span className="text-[10px] text-white/60">{m.time}</span>
                         {isMe && (
-                          <span className="text-[12px]">
+                          <span className="text-[11px]">
                             {m.read ? (
                               <span className="text-[#53bdeb]">✓✓</span>
                             ) : (
-                              <span className="text-white/50">✓✓</span>
+                              <span className="text-white/40">✓✓</span>
                             )}
                           </span>
                         )}
@@ -338,10 +303,10 @@ export default function App() {
               )}
             </div>
 
-            {/* Input bar */}
-            <div className="h-[62px] bg-[#202c33] flex items-center gap-2 px-4 shrink-0">
-              <button className="text-[#8696a0] text-xl hover:text-white">🙂</button>
-              <button className="text-[#8696a0] text-xl hover:text-white">📎</button>
+            {/* Input */}
+            <div className="h-[62px] bg-[#202c33] flex items-center gap-3 px-4 shrink-0">
+              <span className="text-[#8696a0] text-xl cursor-pointer">🙂</span>
+              <span className="text-[#8696a0] text-xl cursor-pointer">📎</span>
               <input
                 value={text}
                 onChange={handleTyping}
@@ -359,11 +324,10 @@ export default function App() {
           </>
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-[#8696a0] bg-[#222e35]">
-            <div className="text-6xl mb-4 opacity-40">💬</div>
-            <div className="text-2xl font-light mb-2">WhatsApp Web</div>
-            <div className="text-sm max-w-sm text-center">
-              Send and receive messages without keeping your phone online.<br />
-              Use WhatsApp on up to 4 linked devices and 1 phone at the same time.
+            <div className="text-6xl mb-4 opacity-30">💬</div>
+            <div className="text-2xl font-light mb-2">WhatsApp</div>
+            <div className="text-sm text-center max-w-xs">
+              Import your real contacts to start chatting live on your own Firebase.
             </div>
           </div>
         )}
